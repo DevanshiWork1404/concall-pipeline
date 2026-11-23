@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Concall Summaries</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--fg:#1b1f24;--mut:#5b6672;--line:#e2e6ea;--acc:#0b7a5a;--warn:#b45309;--sel:#e8f3ef}
+@media (prefers-color-scheme:dark){:root{--bg:#0f1316;--card:#171d22;--fg:#e8edf1;--mut:#93a0ac;--line:#27313a;--acc:#34d399;--warn:#fbbf24;--sel:#14262080}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+header{position:sticky;top:0;z-index:3;background:var(--bg);border-bottom:1px solid var(--line);padding:10px 20px;display:flex;gap:12px;align-items:center}
+h1{font-size:18px;margin:0;flex:1}
+#status{font-size:13px;color:var(--mut)}
+#dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--warn);margin-right:6px}
+#dot.on{background:var(--acc)}
+#ticker{font-size:13px;color:var(--acc);padding:6px 20px;min-height:30px}
+#app{display:grid;grid-template-columns:280px 1fr;gap:16px;padding:0 20px 40px;max-width:1200px;margin:0 auto}
+@media (max-width:760px){#app{grid-template-columns:1fr}}
+#list .item{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
+#list .item.sel{background:var(--sel);border-color:var(--acc)}
+#list .item b{display:block}
+.meta{color:var(--mut);font-size:13px}
+.badge{font-size:12px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);text-transform:capitalize;white-space:nowrap}
+.badge.positive{color:var(--acc);border-color:var(--acc)}
+.badge.cautious,.badge.negative{color:var(--warn);border-color:var(--warn)}
+.new{color:var(--acc);font-size:11px;font-weight:700;margin-left:6px}
+#detail .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+#detail h2{margin:0 0 2px;font-size:20px}
+.ver{font-size:12px;color:var(--acc);margin:8px 0 4px}
+h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin:20px 0 6px}
+ul{margin:0;padding-left:18px}
+li{margin:7px 0}
+.flag{color:var(--warn);font-size:12px}
+details{margin-top:2px}
+summary{cursor:pointer;font-size:12px;color:var(--mut)}
+blockquote{margin:5px 0 0;padding:5px 10px;border-left:3px solid var(--line);color:var(--mut);font-size:13px}
+.tone{margin:8px 0}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--mut);font-size:12px;text-transform:uppercase}
+.qa .q{font-weight:600}
+a{color:var(--acc)}
+.empty{color:var(--mut);padding:40px 0;text-align:center}
+</style>
+</head>
+<body>
+<header><h1>Earnings call summaries</h1><span id="status"><span id="dot"></span><span id="st">Connecting...</span></span></header>
+<div id="ticker"></div>
+<div id="app"><aside id="list"></aside><main id="detail"></main></div>
+<script>
+const recs = new Map(); let selected = null; const fresh = new Set();
+const $ = (id) => document.getElementById(id);
+function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+const flag = (it) => it.numbersVerified === false ? el("span", "flag", "  ⚠ check numbers") : document.createTextNode("");
+function evidence(it) { const d = el("details"); d.append(el("summary", "", "Evidence from transcript"), el("blockquote", "", it.evidence || "")); return d; }
+
+function bulletSection(card, title, items) {
+  if (!items || !items.length) return;
+  card.append(el("h3", "", title));
+  const ul = el("ul");
+  for (const it of items) { const li = el("li"); li.append(document.createTextNode(it.text || ""), flag(it), evidence(it)); ul.append(li); }
+  card.append(ul);
+}
+
+function renderList() {
+  const list = $("list"); list.replaceChildren();
+  if (!recs.size) { list.append(el("div", "empty", "No summaries yet.")); return; }
+  const all = [...recs.values()].sort((a, b) => a.meta.company.localeCompare(b.meta.company));
+  for (const r of all) {
+    const it = el("div", "item" + (r.meta.id === selected ? " sel" : ""));
+    const b = el("b", "", r.meta.company.replace(/ Limited$/i, "")); if (fresh.has(r.meta.id)) b.append(el("span", "new", "NEW"));
+    const sub = el("span", "meta", `${r.summary.quarter || "Quarter n/a"} · ${r.meta.exchange}`);
+    it.append(b, sub);
+    if (r.summary.tone?.label) { it.append(document.createTextNode(" "), el("span", "badge " + r.summary.tone.label, r.summary.tone.label)); }
+    it.onclick = () => { selected = r.meta.id; fresh.delete(r.meta.id); renderList(); renderDetail(); };
+    list.append(it);
+  }
+}
+
+function renderDetail() {
+  const box = $("detail"); box.replaceChildren();
+  const r = recs.get(selected);
+  if (!r) { box.append(el("div", "empty", "Select a company.")); return; }
+  const s = r.summary, v = s.verification || {};
+  const card = el("div", "card");
+  card.append(el("h2", "", s.company));
+  const meta = el("div", "meta");
+  meta.append(document.createTextNode(`${s.quarter || "Quarter n/a"} · call date: ${s.call_date || "not stated"} · ${s.source} · ${s.nse_symbol || ""} ${s.scrip_code || ""} · `));
+  if (/^https?:/.test(s.source_url || "")) { const a = el("a", "", "source PDF"); a.href = s.source_url; a.target = "_blank"; a.rel = "noopener"; meta.append(a); }
+  card.append(meta);
+  card.append(el("div", "ver", `✓ ${v.verified}/${v.claims} claims verified verbatim against the transcript` + (v.dropped ? ` · ${v.dropped} removed` : "") + (v.chunks > 1 ? ` · ${v.chunks} chunks` : "")));
+
+  bulletSection(card, "TL;DR", s.tldr);
+  bulletSection(card, "Management commentary", s.management_commentary);
+  if (s.tone) {
+    const t = el("div", "tone"); t.append(el("span", "badge " + (s.tone.label || ""), "Tone: " + (s.tone.label || "n/a")), document.createTextNode("  " + (s.tone.rationale || "")));
+    if (s.tone.evidence) t.append(evidence(s.tone)); card.append(t);
+  }
+  bulletSection(card, "Guidance / outlook", s.guidance);
+
+  if (s.segment_performance?.length) {
+    card.append(el("h3", "", "Segment performance"));
+    const ul = el("ul");
+    for (const it of s.segment_performance) { const li = el("li"); li.append(el("b", "", it.segment + ": "), document.createTextNode(it.notes || ""), flag(it), evidence(it)); ul.append(li); }
+    card.append(ul);
+  }
+  if (s.key_metrics?.length) {
+    card.append(el("h3", "", "Key numbers"));
+    const t = el("table"), hr = el("tr");
+    for (const h of ["Metric", "Value", "Context"]) hr.append(el("th", "", h));
+    t.append(hr);
+    for (const it of s.key_metrics) {
+      const tr = el("tr"); tr.append(el("td", "", it.metric), el("td", "", it.value), el("td", "", it.context));
+      tr.children[1].append(flag(it)); tr.children[2].append(evidence(it)); t.append(tr);
+    }
+    card.append(t);
+  }
+  if (s.notable_qa?.length) {
+    card.append(el("h3", "", "Notable Q&A"));
+    const ul = el("ul");
+    for (const it of s.notable_qa) {
+      const li = el("li", "qa"); li.append(el("div", "q", `Q${it.asked_by ? " (" + it.asked_by + ")" : ""}: ${it.question}`), el("div", "", "A: " + it.answer), flag(it), evidence(it)); ul.append(li);
+    }
+    card.append(ul);
+  }
+  bulletSection(card, "Risks / concerns", s.risks);
+  box.append(card);
+}
+
+function upsert(rec, isNew) {
+  if (!rec?.meta || !rec?.summary) return;
+  recs.set(rec.meta.id, rec);
+  if (isNew) { fresh.add(rec.meta.id); selected = rec.meta.id; $("ticker").textContent = `New summary: ${rec.meta.company}`; }
+  else if (!selected) selected = rec.meta.id;
+  renderList(); renderDetail();
+}
+
+function connect() {
+  const ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  const set = (on, t) => { $("dot").className = on ? "on" : ""; $("st").textContent = t; };
+  ws.onopen = () => set(true, "Live");
+  ws.onclose = () => { set(false, "Reconnecting..."); setTimeout(connect, 2000); };
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === "snapshot") { (msg.data || []).filter((r) => r.summary?.tldr).forEach((r) => upsert(r, false)); renderList(); renderDetail(); }
+    else if (msg.type === "summary") upsert(msg.data, true);
+    else if (msg.type === "filing") $("ticker").textContent = `New filing detected: ${msg.data.company} (${msg.data.exchange}), processing...`;
+  };
+}
+renderList(); renderDetail(); connect();
+</script>
+</body>
+</html>
